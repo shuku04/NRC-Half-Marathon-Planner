@@ -4,15 +4,12 @@ export const MI_TO_KM = 1.60934
 
 export const FREE_RUN_WORKOUT_ID = 'free-run'
 
-export type PlanType = 'half' | 'marathon'
-
 export interface UserSettings {
   raceDate: string
   startWeek: number
   paceRowIndex: number
   name?: string
   distanceUnit?: DistanceUnit
-  planType?: PlanType
 }
 
 export function getDistanceUnit(settings: UserSettings): DistanceUnit {

@@ -3,10 +3,7 @@ import {
   PACE_CHART,
   RUN_TYPE_COLORS,
   RUN_TYPE_LABELS,
-  getTrainingPlan,
-  MARATHON_PLAN,
   TRAINING_PLAN,
-  type PlanType,
   type Workout,
 } from './data/plan'
 import {
@@ -49,11 +46,9 @@ export default function App() {
   const [logModal, setLogModal] = useState<Workout | 'free' | null>(null)
   const [saveToast, setSaveToast] = useState(false)
 
-  const planType = (settings?.planType ?? 'half') as PlanType
-  const trainingPlan = getTrainingPlan(planType)
   const planWeek = settings ? currentPlanWeek(settings) : 14
   const activeWeek = selectedWeek ?? planWeek
-  const weekData = trainingPlan.find((w) => w.weekNumber === activeWeek)
+  const weekData = TRAINING_PLAN.find((w) => w.weekNumber === activeWeek)
 
   useEffect(() => {
     if (settings) saveSettings(settings)
@@ -70,19 +65,19 @@ export default function App() {
   const paceRow = settings ? PACE_CHART[settings.paceRowIndex] : null
   const distanceUnit = settings ? getDistanceUnit(settings) : 'mi'
   const allWorkouts = useMemo(
-    () => [...TRAINING_PLAN, ...MARATHON_PLAN].flatMap((w) => w.workouts),
+    () => TRAINING_PLAN.flatMap((w) => w.workouts),
     [],
   )
 
   const stats = useMemo(() => {
     const totalMiles = logs.reduce((s, l) => s + (l.distanceMiles ?? 0), 0)
     const totalRuns = logs.length
-    const totalWorkouts = trainingPlan.reduce((s, w) => s + w.workouts.length, 0)
+    const totalWorkouts = TRAINING_PLAN.reduce((s, w) => s + w.workouts.length, 0)
     const doneCount = completed.size
     const totalDistance =
       distanceUnit === 'km' ? milesToKm(totalMiles) : totalMiles
     return { totalMiles, totalDistance, totalRuns, doneCount, totalWorkouts }
-  }, [logs, completed, distanceUnit, trainingPlan])
+  }, [logs, completed, distanceUnit])
 
   const weekProgress = useMemo(() => {
     if (!weekData) return 0
@@ -133,11 +128,9 @@ export default function App() {
       <header className="header">
         <div>
           <h1 className="logo">
-            NRC <span>{planType === 'marathon' ? 'MARATHON' : 'HALF'}</span>
+            NRC <span>HALF</span>
           </h1>
-          <p className="subtitle">
-            14-week audio guided {planType === 'marathon' ? 'marathon' : 'half marathon'} training tracker
-          </p>
+          <p className="subtitle">14-week audio guided half marathon training tracker</p>
         </div>
         <nav className="nav">
           {(['dashboard', 'schedule', 'log', 'pace'] as View[]).map((v) => (
@@ -220,7 +213,7 @@ export default function App() {
         <>
           <h2 className="section-title">Training schedule</h2>
           <div className="week-tabs">
-            {trainingPlan.map((w) => (
+            {TRAINING_PLAN.map((w) => (
               <button
                 key={w.weekNumber}
                 className={`week-tab ${activeWeek === w.weekNumber ? 'active' : ''} ${planWeek === w.weekNumber ? 'current' : ''}`}
@@ -336,7 +329,6 @@ export default function App() {
         <LogModal
           workout={logModal === 'free' ? undefined : logModal}
           workouts={allWorkouts}
-          trainingPlan={trainingPlan}
           distanceUnit={distanceUnit}
           onClose={() => setLogModal(null)}
           onSubmit={submitLog}
@@ -416,30 +408,21 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
   const [raceDate, setRaceDate] = useState(defaultRaceDate())
   const [startWeek, setStartWeek] = useState(14)
   const [paceRowIndex, setPaceRowIndex] = useState(6)
-  const [planType, setPlanType] = useState<PlanType>('half')
   const [name, setName] = useState('')
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi')
-  const planOptions = getTrainingPlan(planType)
 
   return (
     <div className="onboarding">
       <div className="onboarding-card">
         <h1>
-          NRC <span>{planType === 'marathon' ? 'MARATHON' : 'HALF'}</span>
+          NRC <span>HALF</span>
         </h1>
         <p>
-          Track your Nike Run Club 14-week {planType === 'marathon' ? 'marathon' : 'half marathon'} plan. Set your race day, pick your pace row, and start logging runs.
+          Track your Nike Run Club 14-week half marathon plan. Set your race day, pick your pace row, and start logging runs.
         </p>
         <div className="form-group">
           <label>Your name (optional)</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Runner" />
-        </div>
-        <div className="form-group">
-          <label>Plan type</label>
-          <select value={planType} onChange={(e) => setPlanType(e.target.value as PlanType)}>
-            <option value="half">Half marathon</option>
-            <option value="marathon">Marathon</option>
-          </select>
         </div>
         <div className="form-group">
           <label>Race day</label>
@@ -448,7 +431,7 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
         <div className="form-group">
           <label>Starting week (if joining mid-plan)</label>
           <select value={startWeek} onChange={(e) => setStartWeek(Number(e.target.value))}>
-            {planOptions.map((w) => (
+            {TRAINING_PLAN.map((w) => (
               <option key={w.weekNumber} value={w.weekNumber}>
                 Week {w.weekNumber} — {w.label}
               </option>
@@ -471,7 +454,6 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
               raceDate,
               startWeek,
               paceRowIndex,
-              planType,
               name: name || undefined,
               distanceUnit,
             })
@@ -578,22 +560,12 @@ function SettingsForm({
         />
       </div>
       <div className="form-group">
-        <label>Plan type</label>
-        <select
-          value={settings.planType ?? 'half'}
-          onChange={(e) => onChange({ ...settings, planType: e.target.value as PlanType })}
-        >
-          <option value="half">Half marathon</option>
-          <option value="marathon">Marathon</option>
-        </select>
-      </div>
-      <div className="form-group">
         <label>Plan start week</label>
         <select
           value={settings.startWeek}
           onChange={(e) => onChange({ ...settings, startWeek: Number(e.target.value) })}
         >
-          {getTrainingPlan(settings.planType ?? 'half').map((w) => (
+          {TRAINING_PLAN.map((w) => (
             <option key={w.weekNumber} value={w.weekNumber}>
               Week {w.weekNumber}
             </option>
@@ -616,14 +588,12 @@ function SettingsForm({
 function LogModal({
   workout,
   workouts,
-  trainingPlan,
   distanceUnit,
   onClose,
   onSubmit,
 }: {
   workout?: Workout
   workouts: Workout[]
-  trainingPlan: ReturnType<typeof getTrainingPlan>
   distanceUnit: DistanceUnit
   onClose: () => void
   onSubmit: (log: Omit<RunLog, 'id'>) => void
@@ -706,7 +676,7 @@ function LogModal({
               }}
             >
               <option value={FREE_RUN_WORKOUT_ID}>General run (not tied to plan)</option>
-              {trainingPlan.map((week) => (
+              {TRAINING_PLAN.map((week) => (
                 <optgroup key={week.weekNumber} label={`Week ${week.weekNumber} — ${week.label}`}>
                   {week.workouts.map((w) => (
                     <option key={w.id} value={w.id}>
