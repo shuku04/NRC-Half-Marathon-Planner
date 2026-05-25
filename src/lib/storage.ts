@@ -4,12 +4,15 @@ export const MI_TO_KM = 1.60934
 
 export const FREE_RUN_WORKOUT_ID = 'free-run'
 
+export type PlanType = 'half' | 'marathon'
+
 export interface UserSettings {
   raceDate: string
   startWeek: number
   paceRowIndex: number
   name?: string
   distanceUnit?: DistanceUnit
+  planType?: PlanType
 }
 
 export function getDistanceUnit(settings: UserSettings): DistanceUnit {
@@ -28,6 +31,51 @@ export function formatDistance(miles: number | undefined, unit: DistanceUnit): s
   if (miles == null) return ''
   if (unit === 'km') return `${milesToKm(miles).toFixed(2)} km`
   return `${miles.toFixed(1)} mi`
+}
+
+/** Format decimal minutes as M:SS (e.g. 5.75 → "5:45"). */
+export function formatPaceMinutes(minutesPerUnit: number): string {
+  const totalSeconds = Math.round(minutesPerUnit * 60)
+  const mins = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+/** Pace in min/unit from duration and distance in the given unit. */
+export function computePace(
+  durationMinutes: number,
+  distanceInUnit: number,
+): string | undefined {
+  if (durationMinutes <= 0 || distanceInUnit <= 0) return undefined
+  return formatPaceMinutes(durationMinutes / distanceInUnit)
+}
+
+export function paceFromLog(
+  log: Pick<RunLog, 'distanceMiles' | 'durationMinutes'>,
+  unit: DistanceUnit,
+): string | undefined {
+  if (!log.durationMinutes || !log.distanceMiles) return undefined
+  const distanceInUnit =
+    unit === 'km' ? milesToKm(log.distanceMiles) : log.distanceMiles
+  return computePace(log.durationMinutes, distanceInUnit)
+}
+
+/** Both min/mi and min/km when distance and duration are known. */
+export function formatPacePair(
+  log: Pick<RunLog, 'distanceMiles' | 'durationMinutes' | 'avgPace'>,
+  preferredUnit: DistanceUnit,
+): string | undefined {
+  const perMi = paceFromLog(log, 'mi')
+  const perKm = paceFromLog(log, 'km')
+  if (perMi && perKm) {
+    return preferredUnit === 'km'
+      ? `${perKm} /km · ${perMi} /mi`
+      : `${perMi} /mi · ${perKm} /km`
+  }
+  if (log.avgPace) {
+    return `${log.avgPace} ${preferredUnit === 'km' ? '/km' : '/mi'}`
+  }
+  return undefined
 }
 
 export interface RunLog {

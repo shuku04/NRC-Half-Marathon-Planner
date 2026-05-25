@@ -225,3 +225,20 @@ export const RUN_TYPE_COLORS: Record<RunType, string> = {
   long: '#60a5fa',
   rest: '#a3a3a3',
 }
+
+export type PlanType = 'half' | 'marathon'
+
+/** Marathon plan uses the same 14-week structure with distinct workout IDs. */
+export const MARATHON_PLAN: TrainingWeek[] = TRAINING_PLAN.map((week) => ({
+  ...week,
+  label: week.label.replace('Half', 'Marathon'),
+  workouts: week.workouts.map((workout) => ({
+    ...workout,
+    id: `m-${workout.id}`,
+    title: workout.title.replace('Half Marathon', 'Marathon'),
+  })),
+}))
+
+export function getTrainingPlan(planType: PlanType): TrainingWeek[] {
+  return planType === 'marathon' ? MARATHON_PLAN : TRAINING_PLAN
+}

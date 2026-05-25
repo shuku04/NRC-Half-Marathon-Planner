@@ -3,13 +3,18 @@ import {
   PACE_CHART,
   RUN_TYPE_COLORS,
   RUN_TYPE_LABELS,
+  getTrainingPlan,
+  MARATHON_PLAN,
   TRAINING_PLAN,
+  type PlanType,
   type Workout,
 } from './data/plan'
 import {
   currentPlanWeek,
   daysUntilRace,
+  computePace,
   formatDistance,
+  formatPacePair,
   FREE_RUN_WORKOUT_ID,
   getDistanceUnit,
   kmToMiles,
@@ -44,9 +49,11 @@ export default function App() {
   const [logModal, setLogModal] = useState<Workout | 'free' | null>(null)
   const [saveToast, setSaveToast] = useState(false)
 
+  const planType = (settings?.planType ?? 'half') as PlanType
+  const trainingPlan = getTrainingPlan(planType)
   const planWeek = settings ? currentPlanWeek(settings) : 14
   const activeWeek = selectedWeek ?? planWeek
-  const weekData = TRAINING_PLAN.find((w) => w.weekNumber === activeWeek)
+  const weekData = trainingPlan.find((w) => w.weekNumber === activeWeek)
 
   useEffect(() => {
     if (settings) saveSettings(settings)
@@ -63,19 +70,19 @@ export default function App() {
   const paceRow = settings ? PACE_CHART[settings.paceRowIndex] : null
   const distanceUnit = settings ? getDistanceUnit(settings) : 'mi'
   const allWorkouts = useMemo(
-    () => TRAINING_PLAN.flatMap((w) => w.workouts),
+    () => [...TRAINING_PLAN, ...MARATHON_PLAN].flatMap((w) => w.workouts),
     [],
   )
 
   const stats = useMemo(() => {
     const totalMiles = logs.reduce((s, l) => s + (l.distanceMiles ?? 0), 0)
     const totalRuns = logs.length
-    const totalWorkouts = TRAINING_PLAN.reduce((s, w) => s + w.workouts.length, 0)
+    const totalWorkouts = trainingPlan.reduce((s, w) => s + w.workouts.length, 0)
     const doneCount = completed.size
     const totalDistance =
       distanceUnit === 'km' ? milesToKm(totalMiles) : totalMiles
     return { totalMiles, totalDistance, totalRuns, doneCount, totalWorkouts }
-  }, [logs, completed, distanceUnit])
+  }, [logs, completed, distanceUnit, trainingPlan])
 
   const weekProgress = useMemo(() => {
     if (!weekData) return 0
@@ -126,9 +133,11 @@ export default function App() {
       <header className="header">
         <div>
           <h1 className="logo">
-            NRC <span>HALF</span>
+            NRC <span>{planType === 'marathon' ? 'MARATHON' : 'HALF'}</span>
           </h1>
-          <p className="subtitle">14-week audio guided training tracker</p>
+          <p className="subtitle">
+            14-week audio guided {planType === 'marathon' ? 'marathon' : 'half marathon'} training tracker
+          </p>
         </div>
         <nav className="nav">
           {(['dashboard', 'schedule', 'log', 'pace'] as View[]).map((v) => (
@@ -211,7 +220,7 @@ export default function App() {
         <>
           <h2 className="section-title">Training schedule</h2>
           <div className="week-tabs">
-            {TRAINING_PLAN.map((w) => (
+            {trainingPlan.map((w) => (
               <button
                 key={w.weekNumber}
                 className={`week-tab ${activeWeek === w.weekNumber ? 'active' : ''} ${planWeek === w.weekNumber ? 'current' : ''}`}
@@ -260,6 +269,7 @@ export default function App() {
                   log.workoutId === FREE_RUN_WORKOUT_ID
                     ? 'Run'
                     : (workout?.title ?? 'Run')
+                const paceLabel = formatPacePair(log, distanceUnit)
                 return (
                   <div key={log.id} className="log-card">
                     <div>
@@ -270,11 +280,7 @@ export default function App() {
                           <span>{formatDistance(log.distanceMiles, distanceUnit)}</span>
                         )}
                         {log.durationMinutes != null && <span>{log.durationMinutes} min</span>}
-                        {log.avgPace && (
-                          <span>
-                            {log.avgPace} {distanceUnit === 'km' ? '/km' : '/mi'}
-                          </span>
-                        )}
+                        {paceLabel && <span>{paceLabel}</span>}
                         {log.feeling && <span>{FEELINGS[log.feeling - 1]}</span>}
                       </div>
                       {log.notes && (
@@ -330,6 +336,7 @@ export default function App() {
         <LogModal
           workout={logModal === 'free' ? undefined : logModal}
           workouts={allWorkouts}
+          trainingPlan={trainingPlan}
           distanceUnit={distanceUnit}
           onClose={() => setLogModal(null)}
           onSubmit={submitLog}
@@ -409,21 +416,30 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
   const [raceDate, setRaceDate] = useState(defaultRaceDate())
   const [startWeek, setStartWeek] = useState(14)
   const [paceRowIndex, setPaceRowIndex] = useState(6)
+  const [planType, setPlanType] = useState<PlanType>('half')
   const [name, setName] = useState('')
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi')
+  const planOptions = getTrainingPlan(planType)
 
   return (
     <div className="onboarding">
       <div className="onboarding-card">
         <h1>
-          NRC <span>HALF</span>
+          NRC <span>{planType === 'marathon' ? 'MARATHON' : 'HALF'}</span>
         </h1>
         <p>
-          Track your Nike Run Club 14-week half marathon plan. Set your race day, pick your pace row, and start logging runs.
+          Track your Nike Run Club 14-week {planType === 'marathon' ? 'marathon' : 'half marathon'} plan. Set your race day, pick your pace row, and start logging runs.
         </p>
         <div className="form-group">
           <label>Your name (optional)</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Runner" />
+        </div>
+        <div className="form-group">
+          <label>Plan type</label>
+          <select value={planType} onChange={(e) => setPlanType(e.target.value as PlanType)}>
+            <option value="half">Half marathon</option>
+            <option value="marathon">Marathon</option>
+          </select>
         </div>
         <div className="form-group">
           <label>Race day</label>
@@ -432,7 +448,7 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
         <div className="form-group">
           <label>Starting week (if joining mid-plan)</label>
           <select value={startWeek} onChange={(e) => setStartWeek(Number(e.target.value))}>
-            {TRAINING_PLAN.map((w) => (
+            {planOptions.map((w) => (
               <option key={w.weekNumber} value={w.weekNumber}>
                 Week {w.weekNumber} — {w.label}
               </option>
@@ -455,6 +471,7 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
               raceDate,
               startWeek,
               paceRowIndex,
+              planType,
               name: name || undefined,
               distanceUnit,
             })
@@ -561,12 +578,22 @@ function SettingsForm({
         />
       </div>
       <div className="form-group">
+        <label>Plan type</label>
+        <select
+          value={settings.planType ?? 'half'}
+          onChange={(e) => onChange({ ...settings, planType: e.target.value as PlanType })}
+        >
+          <option value="half">Half marathon</option>
+          <option value="marathon">Marathon</option>
+        </select>
+      </div>
+      <div className="form-group">
         <label>Plan start week</label>
         <select
           value={settings.startWeek}
           onChange={(e) => onChange({ ...settings, startWeek: Number(e.target.value) })}
         >
-          {TRAINING_PLAN.map((w) => (
+          {getTrainingPlan(settings.planType ?? 'half').map((w) => (
             <option key={w.weekNumber} value={w.weekNumber}>
               Week {w.weekNumber}
             </option>
@@ -589,12 +616,14 @@ function SettingsForm({
 function LogModal({
   workout,
   workouts,
+  trainingPlan,
   distanceUnit,
   onClose,
   onSubmit,
 }: {
   workout?: Workout
   workouts: Workout[]
+  trainingPlan: ReturnType<typeof getTrainingPlan>
   distanceUnit: DistanceUnit
   onClose: () => void
   onSubmit: (log: Omit<RunLog, 'id'>) => void
@@ -606,6 +635,7 @@ function LogModal({
   const [distance, setDistance] = useState('')
   const [duration, setDuration] = useState('')
   const [pace, setPace] = useState('')
+  const [paceTouched, setPaceTouched] = useState(false)
   const [feeling, setFeeling] = useState<1 | 2 | 3 | 4 | 5 | undefined>()
   const [notes, setNotes] = useState('')
   const [markComplete, setMarkComplete] = useState(Boolean(workout))
@@ -615,11 +645,49 @@ function LogModal({
     ? workout.title
     : selectedWorkout?.title ?? 'Run'
 
+  const distanceValue = parseFloat(distance)
+  const durationValue = parseFloat(duration)
+  const hasValidInputs =
+    !Number.isNaN(distanceValue) &&
+    !Number.isNaN(durationValue) &&
+    distanceValue > 0 &&
+    durationValue > 0
+
+  const autoPace = useMemo(() => {
+    if (!hasValidInputs) return ''
+    return computePace(durationValue, distanceValue) ?? ''
+  }, [hasValidInputs, durationValue, distanceValue])
+
+  const altUnit: DistanceUnit = distanceUnit === 'km' ? 'mi' : 'km'
+  const altDistance =
+    distanceUnit === 'km' ? kmToMiles(distanceValue) : milesToKm(distanceValue)
+  const altPace = useMemo(() => {
+    if (!hasValidInputs) return ''
+    return computePace(durationValue, altDistance) ?? ''
+  }, [hasValidInputs, durationValue, altDistance])
+
+  useEffect(() => {
+    if (!paceTouched) setPace(autoPace)
+  }, [autoPace, paceTouched])
+
   function parseDistance(): number | undefined {
     if (!distance) return undefined
     const value = parseFloat(distance)
     if (Number.isNaN(value)) return undefined
     return distanceUnit === 'km' ? kmToMiles(value) : value
+  }
+
+  function parseDuration(): number | undefined {
+    if (!duration) return undefined
+    const value = parseFloat(duration)
+    if (Number.isNaN(value)) return undefined
+    return value
+  }
+
+  function resolvedPace(): string | undefined {
+    if (pace.trim()) return pace.trim()
+    if (autoPace) return autoPace
+    return undefined
   }
 
   return (
@@ -638,7 +706,7 @@ function LogModal({
               }}
             >
               <option value={FREE_RUN_WORKOUT_ID}>General run (not tied to plan)</option>
-              {TRAINING_PLAN.map((week) => (
+              {trainingPlan.map((week) => (
                 <optgroup key={week.weekNumber} label={`Week ${week.weekNumber} — ${week.label}`}>
                   {week.workouts.map((w) => (
                     <option key={w.id} value={w.id}>
@@ -679,9 +747,23 @@ function LogModal({
           <label>Avg pace (min/{distanceUnit === 'km' ? 'km' : 'mi'})</label>
           <input
             value={pace}
-            onChange={(e) => setPace(e.target.value)}
+            onChange={(e) => {
+              setPaceTouched(true)
+              setPace(e.target.value)
+            }}
             placeholder={distanceUnit === 'km' ? '5:45' : '9:30'}
           />
+          {hasValidInputs && autoPace && (
+            <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
+              {paceTouched ? 'Calculated' : 'Auto'}: {autoPace} /{distanceUnit}
+              {altPace && (
+                <>
+                  {' '}
+                  · {altPace} /{altUnit}
+                </>
+              )}
+            </p>
+          )}
         </div>
         <div className="form-group">
           <label>How did it feel?</label>
@@ -723,8 +805,8 @@ function LogModal({
                 workoutId: workout?.id ?? selectedWorkoutId,
                 date,
                 distanceMiles: parseDistance(),
-                durationMinutes: duration ? parseInt(duration, 10) : undefined,
-                avgPace: pace || undefined,
+                durationMinutes: parseDuration(),
+                avgPace: resolvedPace(),
                 feeling,
                 notes: notes || undefined,
                 completed: isPlanWorkout && markComplete,
