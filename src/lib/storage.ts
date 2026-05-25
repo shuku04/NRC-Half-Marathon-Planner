@@ -1,8 +1,33 @@
+export type DistanceUnit = 'mi' | 'km'
+
+export const MI_TO_KM = 1.60934
+
+export const FREE_RUN_WORKOUT_ID = 'free-run'
+
 export interface UserSettings {
   raceDate: string
   startWeek: number
   paceRowIndex: number
   name?: string
+  distanceUnit?: DistanceUnit
+}
+
+export function getDistanceUnit(settings: UserSettings): DistanceUnit {
+  return settings.distanceUnit ?? 'mi'
+}
+
+export function milesToKm(miles: number): number {
+  return miles * MI_TO_KM
+}
+
+export function kmToMiles(km: number): number {
+  return km / MI_TO_KM
+}
+
+export function formatDistance(miles: number | undefined, unit: DistanceUnit): string {
+  if (miles == null) return ''
+  if (unit === 'km') return `${milesToKm(miles).toFixed(2)} km`
+  return `${miles.toFixed(1)} mi`
 }
 
 export interface RunLog {

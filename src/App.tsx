@@ -9,12 +9,18 @@ import {
 import {
   currentPlanWeek,
   daysUntilRace,
+  formatDistance,
+  FREE_RUN_WORKOUT_ID,
+  getDistanceUnit,
+  kmToMiles,
   loadCompletedWorkouts,
   loadLogs,
   loadSettings,
+  milesToKm,
   saveCompletedWorkouts,
   saveLogs,
   saveSettings,
+  type DistanceUnit,
   type RunLog,
   type UserSettings,
 } from './lib/storage'
@@ -35,7 +41,8 @@ export default function App() {
   const [completed, setCompleted] = useState<Set<string>>(() => loadCompletedWorkouts())
   const [view, setView] = useState<View>('dashboard')
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
-  const [logModal, setLogModal] = useState<Workout | null>(null)
+  const [logModal, setLogModal] = useState<Workout | 'free' | null>(null)
+  const [saveToast, setSaveToast] = useState(false)
 
   const planWeek = settings ? currentPlanWeek(settings) : 14
   const activeWeek = selectedWeek ?? planWeek
@@ -54,14 +61,21 @@ export default function App() {
   }, [completed])
 
   const paceRow = settings ? PACE_CHART[settings.paceRowIndex] : null
+  const distanceUnit = settings ? getDistanceUnit(settings) : 'mi'
+  const allWorkouts = useMemo(
+    () => TRAINING_PLAN.flatMap((w) => w.workouts),
+    [],
+  )
 
   const stats = useMemo(() => {
     const totalMiles = logs.reduce((s, l) => s + (l.distanceMiles ?? 0), 0)
     const totalRuns = logs.length
     const totalWorkouts = TRAINING_PLAN.reduce((s, w) => s + w.workouts.length, 0)
     const doneCount = completed.size
-    return { totalMiles, totalRuns, doneCount, totalWorkouts }
-  }, [logs, completed])
+    const totalDistance =
+      distanceUnit === 'km' ? milesToKm(totalMiles) : totalMiles
+    return { totalMiles, totalDistance, totalRuns, doneCount, totalWorkouts }
+  }, [logs, completed, distanceUnit])
 
   const weekProgress = useMemo(() => {
     if (!weekData) return 0
@@ -81,11 +95,17 @@ export default function App() {
 
   function submitLog(data: Omit<RunLog, 'id'>) {
     const entry: RunLog = { ...data, id: crypto.randomUUID() }
-    setLogs((prev) => [entry, ...prev])
-    if (data.completed) {
+    setLogs((prev) => {
+      const next = [entry, ...prev]
+      saveLogs(next)
+      return next
+    })
+    if (data.completed && data.workoutId !== FREE_RUN_WORKOUT_ID) {
       setCompleted((prev) => new Set(prev).add(data.workoutId))
     }
     setLogModal(null)
+    setSaveToast(true)
+    window.setTimeout(() => setSaveToast(false), 2500)
   }
 
   if (!settings) {
@@ -139,8 +159,10 @@ export default function App() {
               <div className="label">Workouts done</div>
             </div>
             <div className="stat-card">
-              <div className="value">{stats.totalMiles.toFixed(1)}</div>
-              <div className="label">Miles logged</div>
+              <div className="value">{stats.totalDistance.toFixed(1)}</div>
+              <div className="label">
+                {distanceUnit === 'km' ? 'Kilometers logged' : 'Miles logged'}
+              </div>
             </div>
           </div>
 
@@ -221,14 +243,7 @@ export default function App() {
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h2 className="section-title" style={{ margin: 0 }}>Run log</h2>
-            <button
-              className="btn btn-primary"
-              onClick={() =>
-                setLogModal(
-                  weekData?.workouts[0] ?? TRAINING_PLAN[0].workouts[0],
-                )
-              }
-            >
+            <button className="btn btn-primary" onClick={() => setLogModal('free')}>
               + Log run
             </button>
           </div>
@@ -240,18 +255,26 @@ export default function App() {
           ) : (
             <div className="log-list">
               {logs.map((log) => {
-                const workout = TRAINING_PLAN.flatMap((w) => w.workouts).find(
-                  (w) => w.id === log.workoutId,
-                )
+                const workout = allWorkouts.find((w) => w.id === log.workoutId)
+                const title =
+                  log.workoutId === FREE_RUN_WORKOUT_ID
+                    ? 'Run'
+                    : (workout?.title ?? 'Run')
                 return (
                   <div key={log.id} className="log-card">
                     <div>
                       <div className="date">{formatDate(log.date)}</div>
-                      <div className="title">{workout?.title ?? 'Run'}</div>
+                      <div className="title">{title}</div>
                       <div className="log-stats">
-                        {log.distanceMiles != null && <span>{log.distanceMiles} mi</span>}
+                        {log.distanceMiles != null && (
+                          <span>{formatDistance(log.distanceMiles, distanceUnit)}</span>
+                        )}
                         {log.durationMinutes != null && <span>{log.durationMinutes} min</span>}
-                        {log.avgPace && <span>{log.avgPace} /mi</span>}
+                        {log.avgPace && (
+                          <span>
+                            {log.avgPace} {distanceUnit === 'km' ? '/km' : '/mi'}
+                          </span>
+                        )}
                         {log.feeling && <span>{FEELINGS[log.feeling - 1]}</span>}
                       </div>
                       {log.notes && (
@@ -305,11 +328,15 @@ export default function App() {
 
       {logModal && (
         <LogModal
-          workout={logModal}
+          workout={logModal === 'free' ? undefined : logModal}
+          workouts={allWorkouts}
+          distanceUnit={distanceUnit}
           onClose={() => setLogModal(null)}
           onSubmit={submitLog}
         />
       )}
+
+      {saveToast && <div className="toast">Run saved to your log</div>}
     </div>
   )
 }
@@ -383,6 +410,7 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
   const [startWeek, setStartWeek] = useState(14)
   const [paceRowIndex, setPaceRowIndex] = useState(6)
   const [name, setName] = useState('')
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>('mi')
 
   return (
     <div className="onboarding">
@@ -415,11 +443,21 @@ function Onboarding({ onComplete }: { onComplete: (s: UserSettings) => void }) {
           <label>Pace chart row — tap your closest 5K or mile best</label>
           <PaceChartPicker selected={paceRowIndex} onSelect={setPaceRowIndex} compact />
         </div>
+        <div className="form-group">
+          <label>Distance unit</label>
+          <DistanceUnitToggle unit={distanceUnit} onChange={setDistanceUnit} />
+        </div>
         <button
           className="btn btn-primary"
           style={{ width: '100%', marginTop: '0.5rem', padding: '0.85rem' }}
           onClick={() =>
-            onComplete({ raceDate, startWeek, paceRowIndex, name: name || undefined })
+            onComplete({
+              raceDate,
+              startWeek,
+              paceRowIndex,
+              name: name || undefined,
+              distanceUnit,
+            })
           }
         >
           Start training
@@ -470,6 +508,33 @@ function PaceChartPicker({
   )
 }
 
+function DistanceUnitToggle({
+  unit,
+  onChange,
+}: {
+  unit: DistanceUnit
+  onChange: (unit: DistanceUnit) => void
+}) {
+  return (
+    <div className="unit-toggle" role="group" aria-label="Distance unit">
+      <button
+        type="button"
+        className={unit === 'mi' ? 'active' : ''}
+        onClick={() => onChange('mi')}
+      >
+        Miles
+      </button>
+      <button
+        type="button"
+        className={unit === 'km' ? 'active' : ''}
+        onClick={() => onChange('km')}
+      >
+        Kilometers
+      </button>
+    </div>
+  )
+}
+
 function SettingsForm({
   settings,
   onChange,
@@ -477,8 +542,16 @@ function SettingsForm({
   settings: UserSettings
   onChange: (s: UserSettings) => void
 }) {
+  const unit = getDistanceUnit(settings)
   return (
     <div style={{ maxWidth: 400 }}>
+      <div className="form-group">
+        <label>Distance unit</label>
+        <DistanceUnitToggle
+          unit={unit}
+          onChange={(distanceUnit) => onChange({ ...settings, distanceUnit })}
+        />
+      </div>
       <div className="form-group">
         <label>Race day</label>
         <input
@@ -515,38 +588,81 @@ function SettingsForm({
 
 function LogModal({
   workout,
+  workouts,
+  distanceUnit,
   onClose,
   onSubmit,
 }: {
-  workout: Workout
+  workout?: Workout
+  workouts: Workout[]
+  distanceUnit: DistanceUnit
   onClose: () => void
   onSubmit: (log: Omit<RunLog, 'id'>) => void
 }) {
+  const [selectedWorkoutId, setSelectedWorkoutId] = useState(
+    workout?.id ?? FREE_RUN_WORKOUT_ID,
+  )
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [distance, setDistance] = useState('')
   const [duration, setDuration] = useState('')
   const [pace, setPace] = useState('')
   const [feeling, setFeeling] = useState<1 | 2 | 3 | 4 | 5 | undefined>()
   const [notes, setNotes] = useState('')
-  const [markComplete, setMarkComplete] = useState(true)
+  const [markComplete, setMarkComplete] = useState(Boolean(workout))
+  const isPlanWorkout = selectedWorkoutId !== FREE_RUN_WORKOUT_ID
+  const selectedWorkout = workouts.find((w) => w.id === selectedWorkoutId)
+  const modalTitle = workout
+    ? workout.title
+    : selectedWorkout?.title ?? 'Run'
+
+  function parseDistance(): number | undefined {
+    if (!distance) return undefined
+    const value = parseFloat(distance)
+    if (Number.isNaN(value)) return undefined
+    return distanceUnit === 'km' ? kmToMiles(value) : value
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Log — {workout.title}</h2>
+        <h2>Log — {modalTitle}</h2>
+        {!workout && (
+          <div className="form-group">
+            <label>Workout (optional)</label>
+            <select
+              value={selectedWorkoutId}
+              onChange={(e) => {
+                const id = e.target.value
+                setSelectedWorkoutId(id)
+                setMarkComplete(id !== FREE_RUN_WORKOUT_ID)
+              }}
+            >
+              <option value={FREE_RUN_WORKOUT_ID}>General run (not tied to plan)</option>
+              {TRAINING_PLAN.map((week) => (
+                <optgroup key={week.weekNumber} label={`Week ${week.weekNumber} — ${week.label}`}>
+                  {week.workouts.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.title}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="form-group">
           <label>Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="form-row">
           <div className="form-group">
-            <label>Distance (mi)</label>
+            <label>Distance ({distanceUnit === 'km' ? 'km' : 'mi'})</label>
             <input
               type="number"
-              step="0.1"
+              step={distanceUnit === 'km' ? '0.01' : '0.1'}
               value={distance}
               onChange={(e) => setDistance(e.target.value)}
-              placeholder="3.1"
+              placeholder={distanceUnit === 'km' ? '5' : '3.1'}
             />
           </div>
           <div className="form-group">
@@ -560,8 +676,12 @@ function LogModal({
           </div>
         </div>
         <div className="form-group">
-          <label>Avg pace (min/mi)</label>
-          <input value={pace} onChange={(e) => setPace(e.target.value)} placeholder="9:30" />
+          <label>Avg pace (min/{distanceUnit === 'km' ? 'km' : 'mi'})</label>
+          <input
+            value={pace}
+            onChange={(e) => setPace(e.target.value)}
+            placeholder={distanceUnit === 'km' ? '5:45' : '9:30'}
+          />
         </div>
         <div className="form-group">
           <label>How did it feel?</label>
@@ -582,14 +702,16 @@ function LogModal({
           <label>Notes</label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Weather, how legs felt…" />
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-          <input
-            type="checkbox"
-            checked={markComplete}
-            onChange={(e) => setMarkComplete(e.target.checked)}
-          />
-          Mark workout complete
-        </label>
+        {isPlanWorkout && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
+            <input
+              type="checkbox"
+              checked={markComplete}
+              onChange={(e) => setMarkComplete(e.target.checked)}
+            />
+            Mark workout complete
+          </label>
+        )}
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>
             Cancel
@@ -598,18 +720,18 @@ function LogModal({
             className="btn btn-primary"
             onClick={() =>
               onSubmit({
-                workoutId: workout.id,
+                workoutId: workout?.id ?? selectedWorkoutId,
                 date,
-                distanceMiles: distance ? parseFloat(distance) : undefined,
+                distanceMiles: parseDistance(),
                 durationMinutes: duration ? parseInt(duration, 10) : undefined,
                 avgPace: pace || undefined,
                 feeling,
                 notes: notes || undefined,
-                completed: markComplete,
+                completed: isPlanWorkout && markComplete,
               })
             }
           >
-            Save
+            Save run
           </button>
         </div>
       </div>
