@@ -278,7 +278,9 @@ export default function App() {
           {logs.length === 0 ? (
             <div className="empty">
               <p>No runs logged yet.</p>
-              <p style={{ marginTop: '0.5rem' }}>Complete a workout or log a free run.</p>
+              <p style={{ marginTop: '0.5rem' }}>
+                Tap <strong>+ Log run</strong> to add one — then you can edit or delete it from this list.
+              </p>
             </div>
           ) : (
             <div className="log-list">
@@ -291,7 +293,7 @@ export default function App() {
                 const paceLabel = formatPacePair(log, distanceUnit)
                 return (
                   <div key={log.id} className="log-card">
-                    <div>
+                    <div className="log-card-body">
                       <div className="date">{formatDate(log.date)}</div>
                       <div className="title">{title}</div>
                       <div className="log-stats">
@@ -303,22 +305,20 @@ export default function App() {
                         {log.feeling && <span>{FEELINGS[log.feeling - 1]}</span>}
                       </div>
                       {log.notes && (
-                        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
-                          {log.notes}
-                        </p>
+                        <p className="log-notes">{log.notes}</p>
                       )}
                     </div>
                     <div className="log-card-actions">
                       <button
-                        className="btn btn-ghost"
-                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem' }}
+                        type="button"
+                        className="btn btn-outline"
                         onClick={() => setEditingLog(log)}
                       >
-                        Edit
+                        Edit run
                       </button>
                       <button
-                        className="btn btn-ghost"
-                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem' }}
+                        type="button"
+                        className="btn btn-outline btn-outline-danger"
                         onClick={() => setDeleteConfirmId(log.id)}
                       >
                         Delete
