@@ -530,6 +530,34 @@ a {
   margin-top: 0.35rem;
 }
 
+.log-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.confirm-dialog {
+  max-width: 22rem;
+}
+
+.confirm-dialog-message {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.btn-danger {
+  background: #c0392b;
+  color: #fff;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: #a93226;
+}
+
 .empty {
   text-align: center;
   padding: 3rem 1rem;

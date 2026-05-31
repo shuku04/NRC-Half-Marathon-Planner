@@ -44,7 +44,9 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
   const [logModal, setLogModal] = useState<Workout | 'free' | null>(null)
-  const [saveToast, setSaveToast] = useState(false)
+  const [editingLog, setEditingLog] = useState<RunLog | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [saveToast, setSaveToast] = useState<string | null>(null)
 
   const planWeek = settings ? currentPlanWeek(settings) : 14
   const activeWeek = selectedWeek ?? planWeek
@@ -106,8 +108,32 @@ export default function App() {
       setCompleted((prev) => new Set(prev).add(data.workoutId))
     }
     setLogModal(null)
-    setSaveToast(true)
-    window.setTimeout(() => setSaveToast(false), 2500)
+    setSaveToast('Run saved to your log')
+    window.setTimeout(() => setSaveToast(null), 2500)
+  }
+
+  function updateLog(id: string, data: Omit<RunLog, 'id'>) {
+    setLogs((prev) => {
+      const next = prev.map((l) => (l.id === id ? { ...data, id } : l))
+      saveLogs(next)
+      return next
+    })
+    if (data.workoutId !== FREE_RUN_WORKOUT_ID) {
+      setCompleted((prev) => {
+        const next = new Set(prev)
+        if (data.completed) next.add(data.workoutId)
+        else next.delete(data.workoutId)
+        return next
+      })
+    }
+    setEditingLog(null)
+    setSaveToast('Run updated')
+    window.setTimeout(() => setSaveToast(null), 2500)
+  }
+
+  function deleteLog(id: string) {
+    setLogs((prev) => prev.filter((l) => l.id !== id))
+    setDeleteConfirmId(null)
   }
 
   if (!settings) {
@@ -282,13 +308,22 @@ export default function App() {
                         </p>
                       )}
                     </div>
-                    <button
-                      className="btn btn-ghost"
-                      style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem' }}
-                      onClick={() => setLogs((prev) => prev.filter((l) => l.id !== log.id))}
-                    >
-                      Delete
-                    </button>
+                    <div className="log-card-actions">
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem' }}
+                        onClick={() => setEditingLog(log)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem' }}
+                        onClick={() => setDeleteConfirmId(log.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -325,17 +360,42 @@ export default function App() {
         </>
       )}
 
-      {logModal && (
+      {(logModal || editingLog) && (
         <LogModal
-          workout={logModal === 'free' ? undefined : logModal}
+          key={editingLog?.id ?? (logModal === 'free' ? 'free' : logModal?.id ?? 'new')}
+          workout={
+            editingLog
+              ? allWorkouts.find((w) => w.id === editingLog.workoutId)
+              : logModal === 'free'
+                ? undefined
+                : logModal ?? undefined
+          }
+          initialLog={editingLog ?? undefined}
           workouts={allWorkouts}
           distanceUnit={distanceUnit}
-          onClose={() => setLogModal(null)}
-          onSubmit={submitLog}
+          onClose={() => {
+            setLogModal(null)
+            setEditingLog(null)
+          }}
+          onSubmit={
+            editingLog
+              ? (data) => updateLog(editingLog.id, data)
+              : submitLog
+          }
         />
       )}
 
-      {saveToast && <div className="toast">Run saved to your log</div>}
+      {deleteConfirmId && (
+        <ConfirmDialog
+          title="Delete run?"
+          message="This run will be removed from your log. This cannot be undone."
+          confirmLabel="Delete run"
+          onConfirm={() => deleteLog(deleteConfirmId)}
+          onCancel={() => setDeleteConfirmId(null)}
+        />
+      )}
+
+      {saveToast && <div className="toast">{saveToast}</div>}
     </div>
   )
 }
@@ -585,30 +645,83 @@ function SettingsForm({
   )
 }
 
+function logDistanceDisplay(
+  miles: number | undefined,
+  unit: DistanceUnit,
+): string {
+  if (miles == null) return ''
+  const value = unit === 'km' ? milesToKm(miles) : miles
+  return unit === 'km' ? value.toFixed(2) : value.toFixed(1)
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string
+  message: string
+  confirmLabel: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()}>
+        <h2>{title}</h2>
+        <p className="confirm-dialog-message">{message}</p>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-danger" onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LogModal({
   workout,
+  initialLog,
   workouts,
   distanceUnit,
   onClose,
   onSubmit,
 }: {
   workout?: Workout
+  initialLog?: RunLog
   workouts: Workout[]
   distanceUnit: DistanceUnit
   onClose: () => void
   onSubmit: (log: Omit<RunLog, 'id'>) => void
 }) {
+  const isEdit = Boolean(initialLog)
   const [selectedWorkoutId, setSelectedWorkoutId] = useState(
-    workout?.id ?? FREE_RUN_WORKOUT_ID,
+    initialLog?.workoutId ?? workout?.id ?? FREE_RUN_WORKOUT_ID,
   )
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [distance, setDistance] = useState('')
-  const [duration, setDuration] = useState('')
-  const [pace, setPace] = useState('')
-  const [paceTouched, setPaceTouched] = useState(false)
-  const [feeling, setFeeling] = useState<1 | 2 | 3 | 4 | 5 | undefined>()
-  const [notes, setNotes] = useState('')
-  const [markComplete, setMarkComplete] = useState(Boolean(workout))
+  const [date, setDate] = useState(
+    initialLog?.date ?? new Date().toISOString().slice(0, 10),
+  )
+  const [distance, setDistance] = useState(() =>
+    logDistanceDisplay(initialLog?.distanceMiles, distanceUnit),
+  )
+  const [duration, setDuration] = useState(
+    initialLog?.durationMinutes != null ? String(initialLog.durationMinutes) : '',
+  )
+  const [pace, setPace] = useState(initialLog?.avgPace ?? '')
+  const [paceTouched, setPaceTouched] = useState(Boolean(initialLog?.avgPace))
+  const [feeling, setFeeling] = useState<1 | 2 | 3 | 4 | 5 | undefined>(
+    initialLog?.feeling,
+  )
+  const [notes, setNotes] = useState(initialLog?.notes ?? '')
+  const [markComplete, setMarkComplete] = useState(
+    initialLog?.completed ?? Boolean(workout),
+  )
   const isPlanWorkout = selectedWorkoutId !== FREE_RUN_WORKOUT_ID
   const selectedWorkout = workouts.find((w) => w.id === selectedWorkoutId)
   const modalTitle = workout
@@ -663,8 +776,8 @@ function LogModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Log — {modalTitle}</h2>
-        {!workout && (
+        <h2>{isEdit ? 'Edit' : 'Log'} — {modalTitle}</h2>
+        {(!workout || isEdit) && (
           <div className="form-group">
             <label>Workout (optional)</label>
             <select
@@ -772,7 +885,7 @@ function LogModal({
             className="btn btn-primary"
             onClick={() =>
               onSubmit({
-                workoutId: workout?.id ?? selectedWorkoutId,
+                workoutId: workout && !isEdit ? workout.id : selectedWorkoutId,
                 date,
                 distanceMiles: parseDistance(),
                 durationMinutes: parseDuration(),
@@ -783,7 +896,7 @@ function LogModal({
               })
             }
           >
-            Save run
+            {isEdit ? 'Save changes' : 'Save run'}
           </button>
         </div>
       </div>
